@@ -1,0 +1,246 @@
+import discord, random, asyncio, json
+from discord.ext import commands
+
+#Básicos del Discord
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='&', intents=intents)
+
+#Creamos database con 2 guardados 
+C1={ "inventario":[], 'DM':""}#Sólo hace falta para Dungeon Master y el inventario 
+C2={ 'inventario':[], 'DM':""} #Copia para reset
+
+def read_JSON():
+    try:
+        with open('datos.json', 'r') as file:
+            datos = json.load(file)
+            return (datos)
+    except FileNotFoundError:
+        print("El archivo no se encontró.")
+    except json.JSONDecodeError as  e:
+        print("Error al decodificar el archivo Json")
+        print(e)
+
+def add_data_usr(name, clave, valor):
+    datos =read_JSON()
+    datos['users'][name][clave]=valor
+    with open('datos.json', 'w') as file:
+        json.dump(datos, file, indent=4)
+        
+def add_usr(name):
+    datos =read_JSON()
+    print (datos)
+    if name in datos['users']:
+        return  (f"bienvenido de nuevo, {name}")
+    else:
+        datos['users'][name]={}
+        with open('datos.json', 'w') as file:
+            json.dump(datos, file, indent=4)
+        return ("""Welcome to this DnD server! 
+This bot keeps track of your campaigns and helps the Dungeon Master (DM) with the characters and inventory.
+To know the commands, send &Help""")
+
+
+@bot.event
+async def on_ready():
+    print(f'We have logged in as {bot.user}')
+
+@bot.command(name='Hello') #Los modales forman al bot
+async def on_message(message):
+    await message.send("Hello adventurer! Are you ready for the campaign?")
+    print (message.author)
+    await message.send(add_usr(str(message.author)))    
+
+@bot.command(name='StartCampaign')
+async def on_message(message):
+    C1=C2 #para vaciar la llave
+    await message.send("Tell me the name of the DM")
+    def check(m):
+        return m.author == message.author and m.channel == message.channel and m.content.isalpha()
+    while True:
+        try:
+            m = await bot.wait_for('message', check=check, timeout=30)
+            await message.send(f'Nice to meet you, {m.content}, and good luck with your campaign!')
+            C1['DM']= m.content
+            datos =read_JSON()
+            if len(datos["users"])<=1:
+                await message.send ("Let us add some more players to the campaign with the command &AddCharacter")
+            break
+        except  asyncio.TimeoutError:
+            await message.send('You did not tell me the name of the DM, try again.')
+        except Exception as e:
+            await message.send(e)
+            break       
+
+@bot.command(name='AddCharacter') #Añadir personaje
+async def on_message(message):
+#Nombre del personaje
+    await message.send(f'What is the name of the character?')
+    def check(m):
+        return m.author == message.author and m.channel == message.channel and m.content.isalpha()
+    while True:
+        try:
+            m = await bot.wait_for('message', check=check, timeout=60)
+            await message.send(f'Your name is {m.content}, right?')
+            add_data_usr(str(message.author), "nombre", m.content)
+            break
+        except  asyncio.TimeoutError:
+            await message.send('No ingresaste nada a tiempo.')
+        except Exception as e:
+            await message.send(e)
+            break
+#A qué clase pertenece   
+    await message.send(f'What is the class of the character?')
+    def check(m):
+        return m.author == message.author and m.channel == message.channel and m.content.isalpha()
+    while True:
+        try:
+            m = await bot.wait_for('message', check=check, timeout=60)
+            await message.send(f'Your class is {m.content}, I get it.')
+            add_data_usr(str(message.author), "clase", m.content)
+            break
+        except  asyncio.TimeoutError:
+            await message.send('No ingresaste nada a tiempo.')
+            break
+        except Exception as e:
+            await message.send(e)
+            break
+#Que tipo de personaje es
+    await message.send(f'What kind of character is?')
+    def check(m):
+        return m.author == message.author and m.channel == message.channel and m.content.isalpha()
+    while True:
+        try:
+            m = await bot.wait_for('message', check=check, timeout=60)
+            await message.send(f'And your character is a {m.content}')
+            add_data_usr(str(message.author), "raza", m.content)
+            break
+        except  asyncio.TimeoutError:
+            await message.send('No ingresaste nada a tiempo.')
+            break
+        except Exception as e:
+            await message.send(e)
+            break
+    add_data_usr(str(message.author), "lvl", 1)
+
+@bot.command(name='AddInv') #Añadir cosas al inventario
+async def on_message(message):
+    await message.send(f'What do you want to add to the inventory?')
+    def check(m):
+        return m.author == message.author and m.channel == message.channel and m.content.isalpha()
+    while True:
+        try:
+            datos=read_JSON()
+            usr=datos["users"][str(message.author)]["nombre"]
+            m = await bot.wait_for('message', check=check, timeout=30)
+            await message.send(f'{usr} added {m.content} to the inventory')
+            M=m.content
+            C1["inventario"].append(M)
+            break
+        except  asyncio.TimeoutError:
+            await message.send('No ingresaste nada a tiempo.')
+            break
+        except Exception as e:
+            await message.send(e)
+            break
+
+@bot.command(name='ShowInv')#Mostrar inventario
+async def on_message(message): 
+    if C1['inventario']!=[]: #Comprobar lo que hay en el inventario
+        for i in range(len (C1['inventario'])):
+            await message.send(C1['inventario'][i])   
+    else:
+        await message.channel.send('El inventario está vacío ')
+
+@bot.command(name='Save') #Enviar la llave
+async def on_message(message):
+    await message.send(f"This is the key of saving of the campaign: {C1}")
+
+@bot.command(name='LogOut') #Despedirse y enviar la Llave
+async def on_message(message):
+    await message.send(f"""The key to the campaign is this one, don't miss it!
+{C1}
+I hope I'll see you again, adventurer!""")
+    C1=C2
+
+@bot.command(name='{') #La llave carga la partida
+async def on_message(message):
+    C1= message.content
+    await message.send("Welcome back to the campaign, adventurers!")
+
+@bot.command(name='CursedRoll') #Dados
+async def on_message(message):
+    await message.send(f"Which dice do you want to roll? (only the number, please)")
+    def check(m):
+        return m.author == message.author and m.channel == message.channel
+    while True:
+        try:
+            m = await bot.wait_for('message', check=check, timeout=30)
+            M=m.content
+            M= int(M)-1
+            x=random.randint(0,M)
+            await message.send(x)
+            break
+        except  asyncio.TimeoutError:
+            await message.send('No ingresaste nada a tiempo.')
+        except Exception as e:
+            await message.send(e)
+            break   
+
+@bot.command(name='Roll') #Dados
+async def on_message(message):
+    await message.send(f"Which dice do you want to roll? (only the number, please)")
+    def check(m):
+        return m.author == message.author and m.channel == message.channel
+    while True:
+        try:
+            m = await bot.wait_for('message', check=check, timeout=30)
+            M=m.content 
+            M= int(M)
+            x=random.randint(1,M)
+            await message.send(x)
+            break
+        except  asyncio.TimeoutError:
+            await message.send('No ingresaste nada a tiempo.')
+        except Exception as e:
+            await message.send(e)
+            break   
+
+@bot.command(name='Characters') #Mostrar la lista de personajes
+async def on_message(message):
+        datos=read_JSON()
+        if list(datos["users"].keys())==[]:
+            await message.channel.send('There are no characters')
+        else:
+            for i in datos["users"]:
+                await message.channel.send(datos["users"][i]["nombre"])  
+
+@bot.command(name='Upgrade')#Subir el vivel del usuario
+async def on_message(message): 
+    datos=read_JSON()
+    nivel=datos["users"][str(message.author)]["lvl"]
+    nivel=nivel+1
+    if nivel>=21:
+        nivel=20
+        await message.send(f"You cannot upgrade more your character")
+    else:
+        await message.send(f"Your level is now {nivel}! Congratulations!")
+        add_data_usr(str(message.author), "lvl", nivel)
+
+@bot.command(name='Help') #Comando ayuda
+async def on_message(message):
+    await message.send(f"""This is a support bot for playing Dungeos and Dragons online. 
+Commands:
+        - &StartCampaign: starts a new campaign
+        - &LogOut: sends a <<key>> to keep going other day
+        - &<<key>>: resumes campaign
+        - &Save: Shows the key that is in place at the moment
+        - &Upgrade: Increases th player's level by one level
+        - &Characters: tells all the characters on the campaign
+        - &ShowInv: shows what do the players have on the inventory
+        - &AddInv: add objects to inventory
+        - &AddCharacter: adds a new player to the campaign
+        - &Roll: rolls a dice of a number
+        - &CursedRoll: rolls a cursed dice of a number (value of the dice: -1)""")
+
+bot.run("Bot_ID")
